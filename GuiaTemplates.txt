@@ -1,0 +1,152 @@
+cd /usr/share/openstack-tripleo-heat-templates
+
+
+openstack baremetal node list
+openstack overcloud profiles list
+openstack baremetal introspection interface list idnodebaremetal
+openstack baremetal node list
+openstack overcloud node introspect --all-manageable --provide
+
+
+#templates
+cd /usr/share/openstack-tripleo-heat-templates
+./tools/process-templates.py -o ~/openstack-tripleo-heat-templates-rendered
+cd ~
+
+vim overcloud-deploy.sh
+
+vim answers.yaml
+
+vim templates/environment/global.yaml
+
+vim templates/network.yaml
+
+vim templates/environment/network.yaml
+
+openstack flavor list
+
+# 1 Renderizar los templates
+cd /usr/share/openstack-tripleo-heat-templates
+./tools/process-templates.py -o ~/openstack-tripleo-heat-templates-rendered
+
+# 2 copiar en ./templates, los archivos que se personalizan
+cp openstack-tripleo-heat-templates-rendered/network/config/bond-with-vlans/compute.yaml templates/nic-config/
+cp openstack-tripleo-heat-templates-rendered/network/config/bond-with-vlans/controller.yaml /home/stack/templates/nic-config/
+cp -v openstack-tripleo-heat-templates-rendered/network_data.yaml templates/
+cp -v openstack-tripleo-heat-templates-rendered/roles_data.yaml templates/
+
+templates/
+
+# 3 Script de ejeucion
+openstack overcloud deploy \
+-n /home/stack/templates/network_data.yaml \
+-r /home/stack/templates/roles_data.yaml \
+--answers-file ~/answers.yaml \
+--overcloud-ssh-user heat-admin \
+--overcloud-ssh-key ~/.ssh/id_rsa
+
+
+###############################################################################
+###############################################################################
+
+-n /home/stack/templates/network_data.yaml
+
+###############################################################################
+###############################################################################
+
+OPTION:
+  --networks-file NETWORKS_FILE, -n NETWORKS_FILE
+                          Networks file, overrides the default network_data.yaml
+                          in the --templates directory
+PROPOSITO:
+ Descripcion de las VLANS
+
+CAMBIOS:
+
+ * Agregar/Borrar/Modificar las VLAN existentes.
+
+
+
+###############################################################################
+###############################################################################
+
+-r ~/templates/roles_data.yaml
+
+###############################################################################
+###############################################################################
+
+OPTION:
+  --roles-file ROLES_FILE, -r ROLES_FILE
+                        Roles file, overrides the default roles_data.yaml in
+                        the --templates directory. May be an absolute path or
+                        the path relative to --templates
+
+PROPOSITO: 
+  Describir la configuracion de cada rol (controller, compute, etc), networks
+  que se usaran y componentes que se implementan.
+
+
+CAMBIOS:
+
+  * Agregar/Borrar/Modificar las networks que se agregan a cada rol
+
+###############################################################################
+###############################################################################
+
+--answers-file /home/stack/answers.yaml
+
+###############################################################################
+###############################################################################
+
+OPTION:   --answers-file ANSWERS_FILE
+                        Path to a YAML file with arguments and parameters.
+
+PROPOSITO: Proveer el directorio de templates a renderizar
+
+CAMBIOS; 
+  * Ajustar los path de los archivos.
+
+
+
+answers.yaml
+
+templates: /usr/share/openstack-tripleo-heat-templates/
+environments:
+  - /home/stack/templates/environment/global.yaml
+  - /home/stack/containers-prepare-parameter.yaml
+  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/network-environment.yaml
+  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/network-isolation.yaml
+  - /home/stack/templates/environment/network.yaml
+  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/disable-telemetry.yaml
+  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/services/octavia.yaml
+
+
+/home/stack/templates/environment/global.yaml
+===============================================================================
+
+PROPOSITO:
+
+ Parametros globales del overcloud
+
+CAMBIOS:
+
+ Ajustar de acuerdo al overcloud.
+
+
+/home/stack/containers-prepare-parameter.yaml
+===============================================================================
+
+PROPOSITO:
+  
+ Lista de imagenes
+
+CAMBIOS:
+
+ Ninguno
+
+
+/home/stack/openstack-tripleo-heat-templates-rendered/environments/network-environment.yaml
+===========================================================================================
+
+PROPOSITO:
+ 
