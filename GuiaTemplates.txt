@@ -1,17 +1,8 @@
-cd /usr/share/openstack-tripleo-heat-templates
-
-
 openstack baremetal node list
 openstack overcloud profiles list
 openstack baremetal introspection interface list idnodebaremetal
 openstack baremetal node list
 openstack overcloud node introspect --all-manageable --provide
-
-
-#templates
-cd /usr/share/openstack-tripleo-heat-templates
-./tools/process-templates.py -o ~/openstack-tripleo-heat-templates-rendered
-cd ~
 
 vim overcloud-deploy.sh
 
@@ -25,27 +16,156 @@ vim templates/environment/network.yaml
 
 openstack flavor list
 
-# 1 Renderizar los templates
-cd /usr/share/openstack-tripleo-heat-templates
-./tools/process-templates.py -o ~/openstack-tripleo-heat-templates-rendered
+  ____  _             _              _                   _       _             __                
+ / ___|(_)_ __   __ _| | ___  __   _| | __ _ _ __  ___  (_)_ __ | |_ ___ _ __ / _| __ _  ___ ___ 
+ \___ \| | '_ \ / _` | |/ _ \ \ \ / / |/ _` | '_ \/ __| | | '_ \| __/ _ \ '__| |_ / _` |/ __/ _ \
+  ___) | | | | | (_| | |  __/  \ V /| | (_| | | | \__ \ | | | | | ||  __/ |  |  _| (_| | (_|  __/
+ |____/|_|_| |_|\__, |_|\___|   \_/ |_|\__,_|_| |_|___/ |_|_| |_|\__\___|_|  |_|  \__,_|\___\___|
+                |___/                                                                            
 
-# 2 copiar en ./templates, los archivos que se personalizan
-cp openstack-tripleo-heat-templates-rendered/network/config/bond-with-vlans/compute.yaml templates/nic-config/
-cp openstack-tripleo-heat-templates-rendered/network/config/bond-with-vlans/controller.yaml /home/stack/templates/nic-config/
-cp -v openstack-tripleo-heat-templates-rendered/network_data.yaml templates/
-cp -v openstack-tripleo-heat-templates-rendered/roles_data.yaml templates/
+# Una vez que esta instalado el undercloud y se ejecuto la introspection,
+# Renderizar los templates para extraer los que se van a personalizar.
 
-templates/
+$ cd /usr/share/openstack-tripleo-heat-templates
+$ ./tools/process-templates.py -o ~/openstack-tripleo-heat-templates-rendered
+$ cd ~
+$ mkdir templates/nic-config
+# copiar en ./templates, los archivos que se personalizan
 
-# 3 Script de ejeucion
-openstack overcloud deploy \
--n /home/stack/templates/network_data.yaml \
--r /home/stack/templates/roles_data.yaml \
+$ cp openstack-tripleo-heat-templates-rendered/network/config/single-nic-vlans/controller.yaml templates/nic-config/
+$ cp openstack-tripleo-heat-templates-rendered/network/config/single-nic-vlans/compute.yaml /home/stack/templates/nic-config/
+$ cp -v openstack-tripleo-heat-templates-rendered/network_data.yaml templates/
+$ cp -v openstack-tripleo-heat-templates-rendered/roles_data.yaml templates/
+
+
+# Crear archivos complementarios
+
+cat > /home/stack/answers.yaml << EOF
+
+templates: /usr/share/openstack-tripleo-heat-templates/
+environments:
+  - /home/stack/templates/environment/global.yaml
+  - /home/stack/containers-prepare-parameter.yaml
+  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/network-environment.yaml
+  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/network-isolation.yaml
+  - /home/stack/templates/environment/network.yaml
+  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/disable-telemetry.yaml
+  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/services/octavia.yaml
+
+EOF
+
+cat >> templates/network.yaml < EOF 
+# List of networks, used for j2 templating of enabled networks
+
+- name: InternalApi
+  name_lower: internal_api
+  vip: true
+  vlan: '101'
+  ip_subnet: '172.16.11.0/24'
+  allocation_pools: [{'start': '172.16.11.100', 'end': '172.16.11.200'}]
+
+- name: Tenant
+  name_lower: tenant
+  vip: false
+  vlan: '103'
+  ip_subnet: '172.16.13.0/24'
+  allocation_pools: [{'start': '172.16.13.100', 'end': '172.16.13.200'}]
+
+- name: External
+  name_lower: external
+  vip: true
+  vlan: '104'
+  ip_subnet: '172.16.14.0/24'
+  allocation_pools: [{'start': '172.16.14.100', 'end': '172.16.14.200'}]
+  gateway_ip: '172.16.14.10'
+
+- name: Storage
+  name_lower: storage
+  vip: true
+  vlan: '102'
+  ip_subnet: '172.16.12.0/24'
+  allocation_pools: [{'start': '172.16.12.100', 'end': '172.16.12.200'}]
+
+EOF
+
+cat > templates/environment/global.yaml < EOF
+parameter_defaults:
+
+  CloudDomain: lab.example.com 
+  CloudName: cloud.lab.example.com
+
+  ControllerHostnameFormat: 'controller-%index%'
+  ControllerCount: 1
+  OvercloudControllerFlavor: control
+
+  ComputeHostnameFormat: 'compute-%index%'
+  ComputeCount: 1
+  OvercloudComputeFlavor: compute
+
+  NovaEnableRbdBackend: false
+
+  # Glance
+  #GlanceBackend: file
+  GlanceNfsEnabled: false
+  #GlanceNfsShare: '172.16.16.1:/var/nfs/glance'
+  #GlanceNfsOptions: 'rw,sync,context=system_u:object_r:svirt_sandbox_file_t:s0'
+
+  # Cinder
+  CinderEnableIscsiBackend: false
+  CinderEnableRbdBackend: false
+  CinderEnableNfsBackend: true
+  CinderNfsServers: '172.25.249.10:/var/nfs'
+  CinderNfsMountOptions: 'rw,sync'
+EOF
+
+cat > templates/environment/network.yaml << EOF 
+resource_registry:
+  OS::TripleO::Controller::Net::SoftwareConfig:  ../nic-config/controller.yaml
+  OS::TripleO::Compute::Net::SoftwareConfig:  ../nic-config/compute.yaml
+
+parameter_defaults:
+  DnsServers: [ "172.25.249.10" ]
+  NtpServer: "172.25.249.10"
+  TimeZone: 'America/Mexico_City'
+  
+  ControlPlaneDefaultRoute: "172.25.249.1"
+  PublicVirtualFixedIPs: [{ 'ip_address' : "172.16.14.5" }]
+
+  NeutronBridgeMappings: "datacentre:br-ex"
+  NeutronFlatNetworks: "datacentre"
+
+  NetworkDeploymentActions: ['CREATE','UPDATE']
+
+EOF
+
+cat >> overcloud-deploy.sh < EOF 
+#!/bin/bash
+
+source stackrc
+
+time openstack overcloud deploy \
+-n /home/stak/templates/network_data.yaml \
+-r ~/templates/roles_data.yaml \
 --answers-file ~/answers.yaml \
 --overcloud-ssh-user heat-admin \
 --overcloud-ssh-key ~/.ssh/id_rsa
 
+EOF
 
+# Validar la estructura de templates/
+$ tree templates/
+templates/
+├── environment
+│   ├── global.yaml
+│   └── network.yaml
+├── network_data.yaml
+├── network.yaml
+├── nic-config
+│   ├── compute.yaml
+│   └── controller.yaml
+└── roles_data.yaml
+
+Explicacion de archivos y parametros
 ###############################################################################
 ###############################################################################
 
@@ -108,17 +228,6 @@ CAMBIOS;
 
 
 
-answers.yaml
-
-templates: /usr/share/openstack-tripleo-heat-templates/
-environments:
-  - /home/stack/templates/environment/global.yaml
-  - /home/stack/containers-prepare-parameter.yaml
-  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/network-environment.yaml
-  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/network-isolation.yaml
-  - /home/stack/templates/environment/network.yaml
-  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/disable-telemetry.yaml
-  - /home/stack/openstack-tripleo-heat-templates-rendered/environments/services/octavia.yaml
 
 
 /home/stack/templates/environment/global.yaml
